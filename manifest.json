@@ -1,13 +1,42 @@
 {
   "name": "Watermelon Chess",
   "short_name": "西瓜棋",
+  "id": "/watermelon/",
+  "description": "A traditional Chinese folk strategy game. Easy to learn, hard to master.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#e0e0e0",
   "theme_color": "#4e342e",
   "orientation": "portrait",
+  "categories": ["games", "entertainment"],
   "icons": [
-    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Watermelon Chess Gameplay"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Watermelon Chess Gameplay"
+    }
   ]
 }
