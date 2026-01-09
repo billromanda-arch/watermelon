@@ -1,15 +1,18 @@
-const CACHE_NAME = 'watermelon-v3';
+const CACHE_NAME = 'watermelon-final';
 
-// 初始安装时强制缓存核心文件
-const PRE_CACHE = [
+// 只缓存最核心的框架，确保 App 能秒开
+const ESSENTIALS = [
+  './',
   './index.html',
-  './manifest.json',
-  './assets/bgm.mp3'
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRE_CACHE))
+    caches.open(CACHE_NAME).then((cache) => {
+      // 这里的关键是：就算音效没下完，也不准卡住 App 启动
+      return cache.addAll(ESSENTIALS);
+    })
   );
   self.skipWaiting();
 });
@@ -18,18 +21,18 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(clients.claim());
 });
 
-// 核心逻辑：动态缓存音效文件
+// 动态缓存策略：玩的时候才偷偷存，不影响开机速度
 self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
 
       return fetch(event.request).then((response) => {
-        // 如果是 assets 里的音效文件，边听边存
-        if (event.request.url.includes('/assets/')) {
-          return caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, response.clone());
-            return response;
+        // 只有当网络请求成功时，才把音效存入本地
+        if (response && response.status === 200 && event.request.url.includes('/assets/')) {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
           });
         }
         return response;
