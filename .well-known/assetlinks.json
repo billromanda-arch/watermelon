@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.romandatechnology.watermelonchess",
+        "sha256_cert_fingerprints": ["0F:9B:C8:51:67:0F:6D:EF:45:16:51:67:C6:0D:24:8A:EC:12:8C:80:54:1A:0F:4A:72:17:30:A6:69:3E:9B:BA"]
+      }
+    }]
