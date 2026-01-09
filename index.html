@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <!-- 1. 强制刷新补丁：解决某些手机初次加载空白的问题 -->
+    <script>
+        if (!sessionStorage.getItem('init_reloaded')) {
+            sessionStorage.setItem('init_reloaded', 'true');
+            window.location.reload();
+        }
+    </script>
+    <meta charset="UTF-8">
+    <base href="./">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Watermelon Chess</title>
+    
+    <!-- 2. PWA & 移动端配置 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#4e342e">
+    <meta name="application-name" content="西瓜棋">
+
+    <!-- 3. 离线运行保险 (Service Worker) -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW fail', err));
+            });
+        }
+    </script>
+
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+
+    <style>
+        /* === GLOBAL === */
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; }
+        body {
+            margin: 0; padding: 0;
+            background-color: #e0e0e0;
+            height: 100vh; width: 100vw;
+            overflow: hidden;
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        /* === SCREENS === */
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; flex-direction: column; align-items: center; z-index: 1;
+            transition: opacity 0.3s;
+        }
+        .screen.active { display: flex; }
+
+        /* === START SCREEN === */
+        #start-screen { justify-content: center; gap: 20px; background: #f5f5f5; }
+        
+        .title-box { text-align: center; margin-bottom: 30px; }
+        .main-title {
+            font-size: 60px; font-weight: 900; color: #37474f;
+            text-shadow: 2px 2px 0px #fff; letter-spacing: 6px; margin: 0;
+            font-family: "LiSu", serif;
+        }
+        .sub-title { font-size: 14px; color: #78909c; margin-top: 5px; letter-spacing: 2px; }
+
+        .menu-btn {
+            width: 240px; padding: 16px 0;
+            background: #ffffff; color: #455a64;
+            border-radius: 50px; font-size: 18px; font-weight: bold;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            text-align: center; cursor: pointer;
+            border: 1px solid #eceff1; transition: transform 0.1s;
+        }
+        .menu-btn:active { transform: scale(0.96); background: #eceff1; }
+
+        /* === GAME SCREEN === */
+        #game-screen { flex-direction: column; justify-content: space-between; background: #4e342e; }
+        .game-header { margin-top: 15px; color: rgba(255,255,255,0.6); font-size: 14px; }
+        .board-container {
+            width: 95vw; height: 95vw; max-width: 600px; max-height: 600px;
+            position: relative; display: flex; justify-content: center; align-items: center;
+        }
+        canvas { border-radius: 50%; box-shadow: 0 20px 60px rgba(0,0,0,0.6); background: #d7ccc8; display: block; }
+        .game-bar {
+            width: 100%; background: rgba(0,0,0,0.3); padding: 15px;
+            display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+            backdrop-filter: blur(10px);
+        }
+        .bar-btn {
+            background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px; padding: 12px 0; font-size: 14px; font-weight: bold; cursor: pointer;
+        }
+        .bar-btn:active { background: rgba(255,255,255,0.3); }
+        #game-status {
+            position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+            background: rgba(255,255,255,0.95); color: #333; padding: 8px 24px;
+            border-radius: 30px; font-size: 15px; pointer-events: none;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2); font-weight: bold; z-index: 10;
+        }
+
+        /* === MODALS === */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: none; justify-content: center; align-items: center; }
+        .modal-overlay.show { display: flex; animation: popIn 0.2s ease-out; }
+        .modal-window { width: 85%; max-width: 360px; background: #ffffff; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); padding: 25px; position: relative; display: flex; flex-direction: column; gap: 15px; }
+        .modal-title { font-size: 20px; font-weight: 800; color: #333; text-align: center; margin-bottom: 5px; }
+        .close-btn { position: absolute; top: 15px; right: 15px; width: 30px; height: 30px; background: #f5f5f5; color: #888; border-radius: 50%; font-weight: bold; font-size: 20px; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .back-btn { position: absolute; top: 15px; left: 15px; width: 30px; height: 30px; background: #f5f5f5; color: #888; border-radius: 50%; font-weight: bold; font-size: 16px; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .modal-option { display: flex; justify-content: space-between; align-items: center; background: #f9f9f9; padding: 12px; border-radius: 12px; border: 1px solid #eee; }
+        .modal-label { font-size: 15px; color: #555; font-weight: 600; }
+        .modal-msg { text-align:center; font-size:15px; margin:10px 0; color:#666; line-height: 1.5; }
+        select, input[type=range] { padding: 6px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; background: #fff; outline: none; color: #333; }
+        .action-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #66bb6a, #43a047); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 6px 15px rgba(76, 175, 80, 0.3); margin-top: 10px; }
+        .action-btn:active { transform: scale(0.98); }
+        .action-btn.red { background: linear-gradient(135deg, #ef5350, #d32f2f); box-shadow: 0 6px 15px rgba(211, 47, 47, 0.3); }
+        .action-btn.blue { background: linear-gradient(135deg, #42a5f5, #1976d2); box-shadow: 0 6px 15px rgba(25, 118, 210, 0.3); }
+        .level-grid { display: flex; flex-direction: column; gap: 8px; }
+        .level-item { background: #fff; padding: 12px; border-radius: 10px; border: 1px solid #eee; text-align: left; cursor: pointer; transition: all 0.2s; font-size: 14px; color: #555; }
+        .level-item.selected { background: #e8f5e9; border-color: #4caf50; color: #2e7d32; font-weight: bold; }
+        .color-radio { display: flex; gap: 10px; }
+        .color-opt { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #ddd; cursor: pointer; display: flex; overflow: hidden; }
+        .color-opt.selected { border-color: #43a047; transform: scale(1.1); box-shadow: 0 0 0 2px rgba(67, 160, 71, 0.3); }
+        .half { width: 50%; height: 100%; }
+
+        /* === CAREER / MEDALS === */
+        .medal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+        .medal-card { background: #fff; border-radius: 12px; padding: 12px; border: 1px solid #eee; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
+        .medal-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; }
+        .medal-card.full-width { grid-column: span 2; background: #fffcf0; }
+        .m-blue { border-left: 5px solid #2196f3; }
+        .m-gold { border-left: 5px solid #ffc107; }
+        .m-cyan { border-left: 5px solid #00bcd4; }
+        .m-purple { border-left: 5px solid #9c27b0; }
+        .m-red { border-left: 5px solid #f44336; }
+        .m-header { display: flex; justify-content: space-between; align-items: center; }
+        .m-title { font-size: 12px; color: #78909c; font-weight: bold; }
+        .m-icon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
+        .m-value { font-size: 22px; font-weight: 900; color: #37474f; margin-top: 4px; }
+        .m-unit { font-size: 12px; font-weight: normal; color: #90a4ae; margin-left: 2px; }
+
+        #toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: rgba(0,0,0,0.8); color: white; padding: 12px 24px; border-radius: 25px; font-size: 14px; opacity: 0; transition: all 0.3s; z-index: 200; pointer-events: none; }
+        #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen" class="screen active">
+        <div class="title-box">
+            <div class="main-title" data-t="title">西瓜棋</div>
+            <div class="sub-title" data-t="subtitle">民间传统智慧</div>
+        </div>
+        <div class="menu-btn" onclick="UI.openModal('modal-pve-type')" data-t="pve">人机对战</div>
+        <div class="menu-btn" onclick="Game.startPvP()" data-t="pvp">人人对战</div>
+        <div class="menu-btn" onclick="Career.show()" data-t="career_btn" style="border-left: 4px solid #ff9800;">游戏生涯</div>
+        <div class="menu-btn" onclick="UI.openModal('modal-lang')" data-t="lang_btn">语言选择</div>
+        <div class="menu-btn" onclick="UI.openModal('modal-rules')" data-t="rules_btn">游戏规则</div>
+    </div>
+
+    <div id="game-screen" class="screen">
+        <div class="game-header"><span id="mode-display">休闲模式</span></div>
+        <div id="game-status" data-t="red_turn">红方回合</div>
+        <div class="board-container" id="board-container"><canvas id="board"></canvas></div>
+        <div class="game-bar">
+            <button class="bar-btn" onclick="Game.undo()" data-t="undo">悔棋</button>
+            <button class="bar-btn" onclick="UI.openRestartModal()" data-t="restart">重来</button>
+            <button class="bar-btn" onclick="UI.openModal('modal-settings')" data-t="settings">设置</button>
+            <button class="bar-btn" onclick="UI.confirmExit()" data-t="quit">离开</button>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-pve-type" class="modal-overlay"><div class="modal-window"><div class="close-btn" onclick="UI.closeAll()">×</div><div class="modal-title" data-t="pve">人机模式</div><div class="menu-btn" style="width:100%; background:#e8f5e9; color:#2e7d32; border:none; margin-bottom:10px;" onclick="UI.openCasualConfig()" data-t="pve_casual">休闲模式</div><div class="menu-btn" style="width:100%; background:#fff3e0; color:#ef6c00; border:none;" onclick="UI.openChallengeConfig()" data-t="pve_challenge">挑战模式</div></div></div>
+    <div id="modal-casual-config" class="modal-overlay"><div class="modal-window"><div class="back-btn" onclick="UI.openModal('modal-pve-type')">←</div><div class="close-btn" onclick="UI.closeAll()">×</div><div class="modal-title" data-t="casual_settings">休闲设置</div><div class="modal-option"><span class="modal-label" data-t="ai_diff">AI 难度</span><select id="casual-diff"><option value="easy" data-t="diff_easy">简单</option><option value="medium" data-t="diff_medium">中等</option><option value="hard" selected data-t="diff_hard">困难</option><option value="expert" data-t="diff_expert">专家</option><option value="master" data-t="diff_master">大师</option></select></div><div class="modal-option"><span class="modal-label" data-t="first_move">先手方</span><select id="casual-first"><option value="player" data-t="first_player">玩家先手</option><option value="computer" data-t="first_computer">电脑先手</option></select></div><button class="action-btn" onclick="Game.startCasual()" data-t="start_game">开始对弈</button></div></div>
+    <div id="modal-challenge-config" class="modal-overlay"><div class="modal-window"><div class="back-btn" onclick="UI.openModal('modal-pve-type')">←</div><div class="close-btn" onclick="UI.closeAll()">×</div><div class="modal-title" data-t="select_level">选择关卡</div><div class="level-grid" id="level-list"></div><button class="action-btn" onclick="Game.startChallenge()" data-t="start_challenge">开始挑战</button></div></div>
+    <div id="modal-settings" class="modal-overlay"><div class="modal-window"><div class="close-btn" onclick="UI.closeAll()">×</div><div class="modal-title" data-t="settings">设置</div><div class="modal-option"><span class="modal-label" data-t="board_theme">棋盘样式</span><select id="set-theme" onchange="Assets.setTheme(this.value); Game.draw()"><option value="wood" data-t="theme_wood">花梨木</option><option value="stone" data-t="theme_stone">青石板</option></select></div><div class="modal-option"><span class="modal-label" data-t="piece_color">棋子颜色</span><div class="color-radio"><div class="color-opt selected" id="col-rg" onclick="UI.setPieceColor('rg')"><div class="half" style="background:#d32f2f"></div><div class="half" style="background:#388e3c"></div></div><div class="color-opt" id="col-bw" onclick="UI.setPieceColor('bw')"><div class="half" style="background:#212121"></div><div class="half" style="background:#f5f5f5"></div></div></div></div><div class="modal-option"><span class="modal-label" data-t="volume">音效音量</span><input type="range" min="0" max="100" value="80" oninput="Sound.setVol(this.value)"></div><div class="modal-option"><span class="modal-label" data-t="bgm_volume">背景音乐</span><input type="range" min="0" max="100" value="50" oninput="BGM.setVol(this.value)"></div></div></div>
+    <div id="modal-lang" class="modal-overlay"><div class="modal-window"><div class="close-btn" onclick="UI.closeAll()">×</div><div class="modal-title">Language</div><div class="level-grid"><div class="level-item" onclick="Lang.set('zh-CN')">简体中文</div><div class="level-item" onclick="Lang.set('zh-TW')">繁體中文</div><div class="level-item" onclick="Lang.set('en')">English</div><div class="level-item" onclick="Lang.set('fr')">Français</div><div class="level-item" onclick="Lang.set('es')">Español</div></div></div></div>
+    <div id="modal-rules" class="modal-overlay"><div class="modal-window"><div class="close-btn" onclick="UI.closeAll()">×</div><div class="modal-title" data-t="rules_btn">游戏规则</div><div style="text-align:left; font-size:14px; line-height:1.6; color:#555; height:200px; overflow-y:auto" id="rules-content"></div></div></div>
+    <div id="modal-career" class="modal-overlay"><div class="modal-window"><div class="close-btn" onclick="UI.closeAll()">×</div><div class="modal-title" data-t="career_title">游戏生涯</div><div class="medal-grid"><div class="medal-card m-blue"><div class="m-header"><span class="m-title" data-t="stat_total">游戏场次</span><div class="m-icon">🎮</div></div><div class="m-value" id="c-total">0</div></div><div class="medal-card m-cyan"><div class="m-header"><span class="m-title" data-t="stat_time">平均用时</span><div class="m-icon">⏱️</div></div><div class="m-value" id="c-time">0<span class="m-unit">s</span></div></div><div class="medal-card full-width m-gold"><div class="m-header"><span class="m-title" data-t="stat_rate">综合胜率</span><div class="m-icon">🏆</div></div><div class="m-value" id="c-rate">0<span class="m-unit">%</span></div></div><div class="medal-card m-purple"><div class="m-header"><span class="m-title" data-t="stat_master">击败大师</span><div class="m-icon">👿</div></div><div class="m-value" id="c-master">0</div></div><div class="medal-card m-red"><div class="m-header"><span class="m-title" data-t="stat_challenge">挑战达成</span><div class="m-icon">⚔️</div></div><div class="m-value" id="c-challenge">0</div></div></div></div></div>
+    <div id="modal-exit-confirm" class="modal-overlay"><div class="modal-window"><div class="modal-title" data-t="hint">提示</div><div class="modal-msg" data-t="confirm_exit_msg">正在对局中，确定要离开吗？</div><div style="display:flex; gap:10px;"><button class="action-btn" style="background:#cfd8dc; color:#333; box-shadow:none" onclick="UI.closeAll()" data-t="cancel">取消</button><button class="action-btn red" onclick="Game.exitToMenu()" data-t="quit">确定离开</button></div></div></div>
+    <div id="modal-restart-confirm" class="modal-overlay"><div class="modal-window"><div class="modal-title" data-t="hint">提示</div><div class="modal-msg" data-t="confirm_restart">确定要重新开始吗？</div><div style="display:flex; gap:10px;"><button class="action-btn" style="background:#cfd8dc; color:#333; box-shadow:none" onclick="UI.closeAll()" data-t="cancel">取消</button><button class="action-btn red" onclick="Game.confirmRestart()" data-t="restart">确定重来</button></div></div></div>
+    <div id="toast">Message</div>
+
+<script>
+// === UI Controller ===
+const UI = {
+    selectedLevel: 1, pieceColorMode: 'rg',
+    openModal(id) { 
+        this.closeAll(); 
+        document.getElementById(id).classList.add('show'); 
+        Sound.init(); BGM.init(); 
+        history.pushState({modal: id}, null);
+    },
+    closeAll() { document.querySelectorAll('.modal-overlay').forEach(el => el.classList.remove('show')); },
+    openCasualConfig() { this.openModal('modal-casual-config'); },
+    openChallengeConfig() { this.openModal('modal-challenge-config'); this.renderLevels(); },
+    openRestartModal() { this.openModal('modal-restart-confirm'); },
+    renderLevels() {
+        const list = document.getElementById('level-list'); list.innerHTML = '';
+        const levels = [{i:1, t:Lang.get('lvl1')}, {i:2, t:Lang.get('lvl2')}, {i:3, t:Lang.get('lvl3')}, {i:4, t:Lang.get('lvl4')}, {i:5, t:Lang.get('lvl5')}];
+        levels.forEach(lvl => {
+            const div = document.createElement('div'); div.className = `level-item ${this.selectedLevel === lvl.i ? 'selected' : ''}`;
+            div.innerText = lvl.t; div.onclick = () => { this.selectedLevel = lvl.i; this.renderLevels(); };
+            list.appendChild(div);
+        });
+    },
+    confirmExit() { this.openModal('modal-exit-confirm'); },
+    setPieceColor(mode) {
+        this.pieceColorMode = mode;
+        document.getElementById('col-rg').classList.toggle('selected', mode==='rg');
+        document.getElementById('col-bw').classList.toggle('selected', mode==='bw');
+        Assets.updateColors(); Game.draw();
+    },
+    showToast(msg) {
+        const t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 2000);
+    }
+};
+
+// === Career System ===
+const Career = {
+    data: { total: 0, wins: 0, time: 0, master: 0, chall: 0 },
+    load() { const s = localStorage.getItem('wc_career'); if(s) try { this.data = JSON.parse(s); } catch(e){} },
+    save() { localStorage.setItem('wc_career', JSON.stringify(this.data)); },
+    record(isWin, mode, diff, durationSeconds) {
+        if (durationSeconds < 5) return;
+        this.data.total++; this.data.time += durationSeconds;
+        if (isWin) { this.data.wins++; if (mode === 'casual' && diff === 'master') this.data.master++; if (mode === 'challenge') this.data.chall++; }
+        this.save();
+    },
+    show() { UI.openModal('modal-career'); this.render(); },
+    render() {
+        const d = this.data; document.getElementById('c-total').innerText = d.total;
+        const rate = d.total === 0 ? 0 : Math.round((d.wins / d.total) * 100);
+        document.getElementById('c-rate').innerHTML = `${rate}<span class="m-unit">%</span>`;
+        const avg = d.total === 0 ? 0 : Math.round(d.time / d.total);
+        document.getElementById('c-time').innerHTML = `${avg}s`;
+        document.getElementById('c-master').innerText = d.master;
+        document.getElementById('c-challenge').innerText = d.chall;
+    },
+    exportData() { const encoded = btoa(JSON.stringify(this.data)); navigator.clipboard.writeText(encoded).then(() => UI.showToast(Lang.get('toast_copied'))); },
+    importData() {
+        const code = prompt(Lang.get('backup_import_prompt')); if(!code) return;
+        try { const parsed = JSON.parse(atob(code)); this.data = parsed; this.save(); this.render(); UI.showToast(Lang.get('toast_restored')); } catch(e){ UI.showToast(Lang.get('toast_fail')); }
+    }
+};
+
+// === Languages ===
+const Lang = {
+    curr: 'zh-CN',
+    texts: {
+        'zh-CN': {
+            title:"西瓜棋", subtitle:"民间传统智慧", pve:"人机对战", pvp:"人人对战", lang_btn:"语言选择", rules_btn:"游戏规则", career_btn:"游戏生涯",
+            pve_casual:"休闲模式 (练手)", pve_challenge:"挑战模式 (闯关)", casual_settings:"休闲设置", ai_diff:"AI 难度", first_move:"先手方", start_game:"开始对弈",
+            select_level:"选择关卡", start_challenge:"开始挑战", settings:"设置", board_theme:"棋盘样式", piece_color:"棋子颜色", volume:"音效音量", bgm_volume:"背景音乐",
+            undo:"悔棋", restart:"重来", quit:"离开", red_turn:"红方回合", blue_turn:"蓝方回合", ai_thinking:"电脑思考中...",
+            winRed:"红方获胜！", winBlue:"蓝方获胜！", hint:"提示", confirm_exit_msg:"正在对局中，确定要离开吗？", confirm_restart:"确定要重新开始吗？", cancel:"取消",
+            lvl1:"第1关：初试锋芒", lvl2:"第2关：后手反击", lvl3:"第3关：腹背受敌", lvl4:"第4关：残局求生", lvl5:"第5关：神兵天降",
+            career_title:"游戏生涯", stat_total:"游戏场次", stat_rate:"综合胜率", stat_time:"平均用时", stat_master:"击败大师", stat_challenge:"挑战达成",
+            diff_easy:"简单", diff_medium:"中等", diff_hard:"困难", diff_expert:"专家", diff_master:"大师", first_player:"玩家先手", first_computer:"电脑先手", theme_wood:"花梨木", theme_stone:"青石板",
+            rules: `1. 棋盘共21个点，红蓝各执6子。<br>2. 棋子只能沿线移动一步。<br>3. 围死即吃：当一枚棋子周围没有空位时，被吃掉。<br>4. 胜负：吃光对方或困毙对方获胜。`,
+            toast_copied:"存档码已复制！", toast_restored:"存档恢复成功！"
+        },
+        'en': {
+            title:"Watermelon Chess", subtitle:"Traditional Wisdom", pve:"Vs Computer", pvp:"Vs Player", lang_btn:"Language", rules_btn:"Rules", career_btn:"Career",
+            pve_casual:"Casual Mode", pve_challenge:"Challenge Mode", casual_settings:"Settings", ai_diff:"AI Difficulty", first_move:"First Move", start_game:"Start Game",
+            select_level:"Select Level", start_challenge:"Start Challenge", settings:"Settings", board_theme:"Board Theme", piece_color:"Piece Color", volume:"SFX Volume", bgm_volume:"Music Volume",
+            undo:"Undo", restart:"Restart", quit:"Quit", red_turn:"Red's Turn", blue_turn:"Blue's Turn", ai_thinking:"Thinking...",
+            winRed:"Red Wins!", winBlue:"Blue Wins!", hint:"Notice", confirm_exit_msg:"Game in progress. Quit?", confirm_restart:"Restart?", cancel:"Cancel",
+            lvl1:"Lvl 1: Novice", lvl2:"Lvl 2: Defense", lvl3:"Lvl 3: Surrounded", lvl4:"Lvl 4: Survival", lvl5:"Lvl 5: God Mode",
+            career_title:"Career Stats", stat_total:"Games", stat_rate:"Win Rate", stat_time:"Avg Time", stat_master:"Master Wins", stat_challenge:"Challenges",
+            diff_easy:"Easy", diff_medium:"Medium", diff_hard:"Hard", diff_expert:"Expert", diff_master:"Master", first_player:"Player First", first_computer:"Computer First", theme_wood:"Rosewood", theme_stone:"Stone",
+            rules: `1. 6 pieces each on 21 points.<br>2. Move 1 step along lines.<br>3. Surround to Capture: No liberties = captured.<br>4. Win: Capture or block all enemies.`,
+            toast_copied:"Code Copied!", toast_restored:"Restored!"
+        },
+        'zh-TW': {
+            title:"西瓜棋", subtitle:"民間傳統智慧", pve:"人機對戰", pvp:"人人對戰", lang_btn:"語言選擇", rules_btn:"遊戲規則", career_btn:"遊戲生涯",
+            pve_casual:"休閒模式 (練手)", pve_challenge:"挑戰模式 (闖關)", casual_settings:"休閒設置", ai_diff:"AI 難度", first_move:"先手方", start_game:"開始對弈",
+            select_level:"選擇關卡", start_challenge:"開始挑戰", settings:"設置", board_theme:"棋盤樣式", piece_color:"棋子顏色", volume:"音效音量", bgm_volume:"背景音樂",
+            undo:"悔棋", restart:"重來", quit:"離開", red_turn:"紅方回合", blue_turn:"藍方回合", ai_thinking:"電腦思考中...",
+            winRed:"紅方獲勝！", winBlue:"藍方獲勝！", hint:"提示", confirm_exit_msg:"正在對局中，確定要離開嗎？", confirm_restart:"確定要重新開始嗎？", cancel:"取消",
+            lvl1:"第1關：初試鋒芒", lvl2:"第2關：後手反擊", lvl3:"第3關：腹背受敵", lvl4:"第4關：殘局求生", lvl5:"第5關：神兵天降",
+            career_title:"遊戲生涯", stat_total:"遊戲場次", stat_rate:"綜合勝率", stat_time:"平均用時", stat_master:"擊敗大師", stat_challenge:"挑戰達成",
+            diff_easy:"簡單", diff_medium:"中等", diff_hard:"困難", diff_expert:"專家", diff_master:"大師", first_player:"玩家先手", first_computer:"電腦先手", theme_wood:"花梨木", theme_stone:"青石板",
+            rules: `1. 棋盤共21個點，紅藍各執6子。<br>2. 棋子只能沿線移動一步。<br>3. 圍死即吃：當一枚棋子周圍沒有空位時，被吃掉。<br>4. 獲勝：吃光對方或困斃對方獲勝。`,
+            toast_copied:"存檔碼已複製！", toast_restored:"存檔恢復成功！"
+        },
+        'fr': {
+            title:"Échecs Pastèque", subtitle:"Sagesse", pve:"Vs Ordi", pvp:"Vs Joueur", lang_btn:"Langue", rules_btn:"Règles", career_btn:"Carrière",
+            pve_casual:"Mode Occasionnel", pve_challenge:"Mode Défi", casual_settings:"Réglages", ai_diff:"Difficulté IA", first_move:"Premier Coup", start_game:"Commencer",
+            select_level:"Choisir Niveau", start_challenge:"Lancer Défi", settings:"Réglages", board_theme:"Thème", piece_color:"Couleur", volume:"Effets", bgm_volume:"Musique",
+            undo:"Annuler", restart:"Recommencer", quit:"Quitter", red_turn:"Tour Rouge", blue_turn:"Tour Bleu", ai_thinking:"Refléchit...",
+            winRed:"Rouge Gagne!", winBlue:"Bleu Gagne!", hint:"Avis", confirm_exit_msg:"Partie en cours. Quitter ?", confirm_restart:"Recommencer ?", cancel:"Annuler",
+            lvl1:"Niv 1: Novice", lvl2:"Niv 2: Défense", lvl3:"Niv 3: Encerclé", lvl4:"Niv 4: Survie", lvl5:"Niv 5: Divin",
+            career_title:"Stats", stat_total:"Parties", stat_rate:"Victoires", stat_time:"Temps Moy.", stat_master:"Vaincre Maître", stat_challenge:"Défis",
+            diff_easy:"Facile", diff_medium:"Moyen", diff_hard:"Difficile", diff_expert:"Expert", diff_master:"Maître", first_player:"Joueur d'abord", first_computer:"Ordi d'abord", theme_wood:"Bois", theme_stone:"Pierre",
+            rules: `1. 6 pièces chacun.<br>2. Déplacez d'un pas.<br>3. Capturer: Pas de libertés.<br>4. Gagner: Capturer tout.`,
+            toast_copied:"Copié !", toast_restored:"Restauré !"
+        },
+        'es': {
+            title:"Ajedrez Sandía", subtitle:"Sabiduría", pve:"Vs PC", pvp:"Vs Jugador", lang_btn:"Idioma", rules_btn:"Reglas", career_btn:"Carrera",
+            pve_casual:"Modo Casual", pve_challenge:"Modo Desafío", casual_settings:"Ajustes", ai_diff:"Dificultad", first_move:"Primero", start_game:"Iniciar",
+            select_level:"Nivel", start_challenge:"Desafío", settings:"Ajustes", board_theme:"Tema", piece_color:"Color", volume:"Efectos", bgm_volume:"Música",
+            undo:"Deshacer", restart:"Reiniciar", quit:"Salir", red_turn:"Turno Rojo", blue_turn:"Turno Azul", ai_thinking:"Pensando...",
+            winRed:"¡Rojo Gana!", winBlue:"¡Azul Gana!", hint:"Aviso", confirm_exit_msg:"¿Salir?", confirm_restart:"¿Reiniciar?", cancel:"Cancelar",
+            lvl1:"Nivel 1: Novato", lvl2:"Nivel 2: Defensa", lvl3:"Nivel 3: Rodeado", lvl4:"Nivel 4: Supervivencia", lvl5:"Nivel 5: Divino",
+            career_title:"Estadísticas", stat_total:"Juegos", stat_rate:"Victorias", stat_time:"Promedio", stat_master:"Maestro", stat_challenge:"Desafíos",
+            diff_easy:"Fácil", diff_medium:"Medio", diff_hard:"Difícil", diff_expert:"Experto", diff_master:"Maestro", first_player:"Jugador", first_computer:"PC", theme_wood:"Madera", theme_stone:"Piedra",
+            rules: `1. 6 piezas cada uno.<br>2. 1 paso por línea.<br>3. Captura: Sin libertades.<br>4. Ganar: Capturar todo.`,
+            toast_copied:"¡Copiado!", toast_restored:"¡Restaurado!"
+        }
+    },
+    set(c) { 
+        this.curr=c; UI.closeAll(); 
+        document.querySelectorAll('[data-t]').forEach(el => { const k = el.getAttribute('data-t'); if(this.texts[c][k]) el.innerText = this.texts[c][k]; });
+        document.getElementById('rules-content').innerHTML = this.texts[c].rules;
+        Game.updateUI(); 
+    },
+    get(k) { return (this.texts[this.curr]||this.texts['zh-CN'])[k]; }
+};
+
+// === Assets & Theme ===
+const Assets = {
+    colors: { lineLight:'', lineDark:'', pieceP:[], pieceC:[], bg:'' },
+    themes: {
+        wood: { bg: '#d7ccc8', lD: 'rgba(62,39,35,0.6)', lL: 'rgba(255,255,255,0.4)' },
+        stone: { bg: '#cfd8dc', lD: 'rgba(38,50,56,0.6)', lL: 'rgba(255,255,255,0.4)' }
+    },
+    setTheme(name) { const t = this.themes[name]; this.colors.lineDark = t.lD; this.colors.lineLight = t.lL; this.colors.bg = t.bg; this.updateColors(); },
+    updateColors() {
+        if (UI.pieceColorMode === 'rg') { this.colors.pieceP = ['#e53935', '#b71c1c']; this.colors.pieceC = ['#43a047', '#1b5e20']; } 
+        else { this.colors.pieceP = ['#424242', '#000000']; this.colors.pieceC = ['#f5f5f5', '#bdbdbd']; }
+    }
+};
+
+// === Voice & Audio ===
+const Voice = {
+    aiFiles: ['a_cap_1.mp3', 'a_cap_2.mp3', 'a_cap_3.mp3', 'a_cap_4.mp3', 'a_cap_5.mp3'],
+    plFiles: ['p_cap_1.mp3', 'p_cap_2.mp3', 'p_cap_3.mp3', 'p_cap_4.mp3', 'p_cap_5.mp3'],
+    getLangPrefix() { const map = { 'zh-CN': 'zh', 'zh-TW': 'zh', 'en': 'en', 'fr': 'fr', 'es': 'es' }; return map[Lang.curr] || 'en'; },
+    play(type) {
+        const prefix = this.getLangPrefix(); let file = '';
+        if (type === 'ai_win') file = `assets/${prefix}_a_win.mp3`;
+        else if (type === 'player_win') file = `assets/${prefix}_p_win.mp3`;
+        else if (type === 'ai_capture') { const rand = Math.floor(Math.random() * 5); file = `assets/${prefix}_${this.aiFiles[rand]}`; }
+        else if (type === 'player_capture') { const rand = Math.floor(Math.random() * 5); file = `assets/${prefix}_${this.plFiles[rand]}`; }
+        if (file) { const audio = new Audio(file); audio.volume = Sound.vol; audio.play().catch(e=>{}); }
+    }
+};
+
+const BGM = {
+    audio: null, vol: 0.5,
+    init() { if (!this.audio) { this.audio = new Audio('assets/bgm.mp3'); this.audio.loop = true; this.audio.volume = this.vol; } if (this.audio.paused) this.audio.play().catch(e=>{}); },
+    setVol(v) { this.vol = v/100; if (this.audio) this.audio.volume = this.vol; }
+};
+
+const Sound = {
+    ctx: null, gain: null, vol: 0.8,
+    init() { const AC = window.AudioContext||window.webkitAudioContext; if(!this.ctx && AC) { this.ctx = new AC(); this.gain = this.ctx.createGain(); this.gain.connect(this.ctx.destination); } if(this.ctx && this.ctx.state==='suspended') this.ctx.resume().catch(()=>{}); },
+    setVol(v) { this.vol=v/100; if(this.gain) this.gain.gain.value=this.vol; },
+    play(t) {
+        this.init(); if(!this.ctx) return; const c=this.ctx.currentTime, o=this.ctx.createOscillator(), g=this.ctx.createGain(); o.connect(g); g.connect(this.gain);
+        if(t==='move'){ o.type='triangle'; o.frequency.setValueAtTime(250,c); g.gain.setValueAtTime(0.5,c); g.gain.exponentialRampToValueAtTime(0.01,c+0.1); o.start(c); o.stop(c+0.1); }
+        else if(t==='capture'){ o.type='sine'; o.frequency.setValueAtTime(800,c); o.frequency.linearRampToValueAtTime(1400,c+0.15); g.gain.setValueAtTime(0.5,c); g.gain.linearRampToValueAtTime(0,c+0.2); o.start(c); o.stop(c+0.2); }
+        else if(t==='win'){ [523,659,783,1046].forEach((f,i)=>{ const o2=this.ctx.createOscillator(), g2=this.ctx.createGain(); o2.connect(g2); g2.connect(this.gain); o2.frequency.value=f; g2.gain.setValueAtTime(0.2,c+i*0.1); g2.gain.exponentialRampToValueAtTime(0.01,c+i*0.1+0.5); o2.start(c+i*0.1); o2.stop(c+i*0.1+0.5); }); }
+    }
+};
+
+// === Core Game ===
+const Game = {
+    canvas: document.getElementById('board'), ctx: document.getElementById('board').getContext('2d'),
+    EMPTY: 0, BLUE: 1, RED: 2, BLUE_SUPER: 3,
+    L_W: 600, L_CX: 300, L_CY: 300, L_RIN: 90, L_RMID: 180, L_ROUT: 270, L_RP: 24,
+    nodes: [], pieces: [], history: [], anims: [],
+    turn: 2, selected: null, over: false, aiThinking: false, mode: 'casual', level: 1, diff: 'hard', startTime: 0,
+
+    startPvP() { this.mode='pvp'; UI.closeAll(); this.enterGame(this.RED); },
+    startCasual() { this.mode='casual'; this.diff=document.getElementById('casual-diff').value; UI.closeAll(); this.enterGame(document.getElementById('casual-first').value==='player'?this.RED:this.BLUE); },
+    startChallenge() { this.mode='challenge'; this.diff='master'; this.level=UI.selectedLevel; UI.closeAll(); this.enterGame(); },
+    enterGame(forceTurn) { document.getElementById('start-screen').classList.remove('active'); document.getElementById('game-screen').classList.add('active'); history.pushState({page: 'game'}, null); this.buildGraph(); setTimeout(() => { this.resize(); this.init(forceTurn); }, 50); },
+    exitToMenu() { UI.closeAll(); this.over = true; document.getElementById('game-screen').classList.remove('active'); document.getElementById('start-screen').classList.add('active'); if (history.state && history.state.page === 'game') history.back(); else history.replaceState({page: 'menu'}, null); },
+    confirmRestart() { UI.closeAll(); if(this.mode==='casual') this.init(document.getElementById('casual-first').value==='player'?this.RED:this.BLUE); else this.init(); },
+    init(overrideTurn) {
+        this.pieces = new Array(21).fill(this.EMPTY); this.history=[]; this.anims=[]; this.selected=null; this.over=false; this.aiThinking=false; this.startTime = Date.now();
+        [15,16,17,14,13,7].forEach(i=>this.pieces[i]=this.RED); [9,20,19,10,11,5].forEach(i=>this.pieces[i]=this.BLUE);
+        this.turn = overrideTurn || this.RED;
+        if(this.mode==='challenge') { if(this.level===2) this.turn=this.BLUE; if(this.level===3) { this.pieces[5]=this.EMPTY; this.pieces[1]=this.BLUE; this.turn=this.BLUE; } if(this.level===4) { this.pieces[19]=this.EMPTY; this.pieces[17]=this.BLUE; this.turn=this.RED; } if(this.level===5) { this.pieces[9]=this.BLUE_SUPER; this.turn=this.BLUE; } }
+        this.updateUI(); this.loop(); if(this.mode!=='pvp' && this.turn===this.BLUE) setTimeout(()=>this.triggerAI(),800);
+    },
+    resize() {
+        const container = document.getElementById('board-container'); const rect = container.getBoundingClientRect(); const size = Math.min(rect.width, rect.height); const dpr = window.devicePixelRatio || 1;
+        this.canvas.width = size * dpr; this.canvas.height = size * dpr; this.canvas.style.width = size + 'px'; this.canvas.style.height = size + 'px';
+        const scale = (size * dpr) / this.L_W; this.ctx.setTransform(1,0,0,1,0,0); this.ctx.scale(scale, scale); Assets.setTheme('wood'); this.draw();
+    },
+    buildGraph() {
+        this.nodes=[]; const add=(x,y)=>{this.nodes.push({x,y,adj:[]});}; const link=(i,j)=>{if(!this.nodes[i].adj.includes(j))this.nodes[i].adj.push(j);if(!this.nodes[j].adj.includes(i))this.nodes[j].adj.push(i);};
+        add(this.L_CX,this.L_CY); [-Math.PI/2,0,Math.PI/2,Math.PI].forEach(a=>add(this.L_CX+this.L_RIN*Math.cos(a),this.L_CY+this.L_RIN*Math.sin(a))); [-Math.PI/2,0,Math.PI/2,Math.PI].forEach(a=>add(this.L_CX+this.L_RMID*Math.cos(a),this.L_CY+this.L_RMID*Math.sin(a))); for(let i=0;i<12;i++){let a=-Math.PI/2+i*(Math.PI/6);add(this.L_CX+this.L_ROUT*Math.cos(a),this.L_CY+this.L_ROUT*Math.sin(a));}
+        link(0,1); link(1,5); link(5,9); link(0,2); link(2,6); link(6,12); link(0,3); link(3,7); link(7,15); link(0,4); link(4,8); link(8,18); link(1,2); link(2,3); link(3,4); link(4,1); for(let i=9;i<=20;i++) link(i, i===20?9:i+1); link(5,20); link(5,10); link(6,11); link(6,13); link(7,14); link(7,16); link(8,17); link(8,19);
+    },
+    click(clientX, clientY) {
+        if(this.over||this.aiThinking||this.anims.length>0) return; const rect = this.canvas.getBoundingClientRect(); const logicX = (clientX - rect.left) * (this.L_W / rect.width); const logicY = (clientY - rect.top) * (this.L_W / rect.height);
+        let minD = 60, target = -1; this.nodes.forEach((n,i)=>{ let d = Math.sqrt((logicX-n.x)**2 + (logicY-n.y)**2); if(d<minD){minD=d;target=i;} });
+        if(target===-1) return; const p=this.pieces[target]; if(p===this.turn) { this.selected=target; this.draw(); } 
+        else if(p===this.EMPTY && this.selected!==null) { if(this.getMoves(this.pieces, this.turn).some(m=>m.from===this.selected && m.to===target)) this.move(this.selected, target); }
+    },
+    move(from,to) {
+        const mover = this.turn; this.history.push({p:[...this.pieces], t:this.turn, o:this.over}); this.anims.push({type:'move',start:Date.now(),dur:250,data:{p:this.pieces[from],from,to}});
+        this.pieces[to]=this.pieces[from]; this.pieces[from]=this.EMPTY; this.selected=null; Sound.play('move');
+        const oppP = (this.turn===this.RED)?this.BLUE:this.RED; const cap = this.checkCapture(this.pieces, (oppP===this.BLUE)?[this.BLUE,this.BLUE_SUPER]:[this.RED]);
+        if(cap.length>0) { cap.forEach(i=>{this.anims.push({type:'die',start:Date.now(),dur:300,data:{p:this.pieces[i],idx:i}}); this.pieces[i]=this.EMPTY;}); setTimeout(()=>{ Sound.play('capture'); if(this.pieces.filter(p=>p===oppP).length>0) Voice.play(mover===this.RED?'player_capture':'ai_capture'); }, 250); }
+        if(this.pieces.filter(p=>((oppP===this.BLUE)?(p===1||p===3):p===2)).length===0 || this.getMoves(this.pieces, oppP).length===0) { setTimeout(()=>this.endGame(this.turn===this.RED?Lang.get('winRed'):Lang.get('winBlue'), this.turn), 600); return; }
+        this.turn=oppP; this.updateUI(); if(this.mode!=='pvp' && !this.over && this.turn===this.BLUE) this.triggerAI();
+    },
+    checkCapture(board, types) {
+        let cap=[], vis=new Set(); for(let i=0;i<board.length;i++) { if(types.includes(board[i]) && !vis.has(i)) {
+            let grp=[i], q=[i]; vis.add(i); let head=0; while(head<q.length) { let c=q[head++]; for(let n of this.nodes[c].adj) if(types.includes(board[n]) && !vis.has(n)) { vis.add(n); grp.push(n); q.push(n); } }
+            let alive=false; for(let m of grp) { for(let n of this.nodes[m].adj) if(board[n]===this.EMPTY){alive=true;break;} if(alive)break; } if(!alive) cap.push(...grp);
+        }} return cap;
+    },
+    getMoves(board, player) {
+        let m=[]; const isBlue=(player===this.BLUE||player===this.BLUE_SUPER); for(let i=0;i<board.length;i++) { let p=board[i]; if((isBlue&&(p===this.BLUE||p===this.BLUE_SUPER))||(!isBlue&&p===this.RED)) {
+            for(let n of this.nodes[i].adj) if(board[n]===this.EMPTY) m.push({from:i,to:n}); if(p===this.BLUE_SUPER) { for(let n1 of this.nodes[i].adj) if(board[n1]===this.EMPTY) for(let n2 of this.nodes[n1].adj) if(board[n2]===this.EMPTY && n2!==i) m.push({from:i,to:n2}); }
+        }} return m;
+    },
+    triggerAI() { this.aiThinking=true; this.updateUI(); setTimeout(()=>{ try { const move = AI.bestMove(this.pieces, this.diff); this.aiThinking=false; if(move) this.move(move.from, move.to); else this.endGame(Lang.get('winRed'), this.RED); } catch(e){this.aiThinking=false;this.updateUI();} },500); },
+    undo() { if(this.aiThinking||this.over||this.anims.length>0||this.history.length===0)return; let limit=(this.mode!=='pvp')?2:1; while(limit-->0) { const prev=this.history.pop(); if(!prev) break; this.pieces=prev.p; this.turn=prev.t; this.over=prev.o; } this.selected=null; this.updateUI(); this.draw(); },
+    endGame(msg, winner) { this.over=true; this.aiThinking=false; if (this.mode !== 'pvp') Career.record(winner === this.RED, this.mode, this.diff, (Date.now()-this.startTime)/1000); Sound.play('win'); setTimeout(() => Voice.play(winner===this.RED?'player_win':'ai_win'), 1500); document.getElementById('game-status').innerText=msg; },
+    updateUI() { if(this.over) return; const st=document.getElementById('game-status'), md=document.getElementById('mode-display'); let txt=this.aiThinking?Lang.get('ai_thinking'):(this.turn===this.RED?Lang.get('red_turn'):Lang.get('blue_turn')); if(st) st.innerText=txt; if(md) { if(this.mode==='pvp') md.innerText = Lang.get('pvp'); else if(this.mode==='casual') md.innerText = Lang.get('pve_casual'); else md.innerText = Lang.get('pve_challenge') + ` - ` + Lang.get('lvl'+this.level).split('：')[0]; } },
+    loop() { if(this.over) return; const now=Date.now(); this.anims=this.anims.filter(a=>now<a.start+a.dur); this.draw(); requestAnimationFrame(()=>this.loop()); },
+    draw() {
+        const ctx=this.ctx; if(Assets.colors.bg){ctx.fillStyle=Assets.colors.bg;ctx.fillRect(0,0,600,600);}
+        const dl=(x1,y1,x2,y2)=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=Assets.colors.lineLight;ctx.lineWidth=5;ctx.stroke();ctx.strokeStyle=Assets.colors.lineDark;ctx.lineWidth=3;ctx.stroke();};
+        const dc=r=>{ctx.beginPath();ctx.arc(this.L_CX,this.L_CY,r,0,Math.PI*2);ctx.strokeStyle=Assets.colors.lineLight;ctx.lineWidth=5;ctx.stroke();ctx.strokeStyle=Assets.colors.lineDark;ctx.lineWidth=3;ctx.stroke();};
+        if(this.nodes.length===0) return; dc(this.L_RIN); dc(this.L_ROUT); dl(this.L_CX,this.L_CY-this.L_ROUT,this.L_CX,this.L_CY+this.L_ROUT); dl(this.L_CX-this.L_ROUT,this.L_CY,this.L_CX+this.L_ROUT,this.L_CY);
+        const da=(m,a,b)=>{dl(this.nodes[a].x,this.nodes[a].y,this.nodes[m].x,this.nodes[m].y);dl(this.nodes[m].x,this.nodes[m].y,this.nodes[b].x,this.nodes[b].y);};
+        da(5,20,10);da(6,11,13);da(7,14,16);da(8,17,19); const mov=this.anims.filter(a=>a.type==='move').map(a=>a.data.to);
+        this.nodes.forEach((n,i)=>{ if(mov.includes(i))return; const p=this.pieces[i]; if(p!==this.EMPTY && p!==undefined) this.drawPiece(n.x,n.y,p,i===this.selected); else { ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.arc(n.x,n.y,8,0,Math.PI*2); ctx.fill(); } });
+        this.anims.forEach(a=>{ const p=Math.min(1,(Date.now()-a.start)/a.dur), ease=1-Math.pow(1-p,3); if(a.type==='move'){ const n1=this.nodes[a.data.from], n2=this.nodes[a.data.to]; const r1=Math.hypot(n1.x-this.L_CX, n1.y-this.L_CY), r2=Math.hypot(n2.x-this.L_CX, n2.y-this.L_CY); let cx,cy; if(Math.abs(r1-r2)<1 && (Math.abs(r1-this.L_RIN)<1 || Math.abs(r1-this.L_ROUT)<1)) { const ang1=Math.atan2(n1.y-this.L_CY, n1.x-this.L_CX), ang2=Math.atan2(n2.y-this.L_CY, n2.x-this.L_CX); let diff=ang2-ang1; if(diff>Math.PI) diff-=2*Math.PI; if(diff<-Math.PI) diff+=2*Math.PI; const curAng=ang1+diff*ease; cx=this.L_CX+r1*Math.cos(curAng); cy=this.L_CY+r1*Math.sin(curAng); } else { cx=n1.x+(n2.x-n1.x)*ease; cy=n1.y+(n2.y-n1.y)*ease; } this.drawPiece(cx,cy,a.data.p,false); } else if(a.type==='die'){ const n=this.nodes[a.data.idx]; ctx.save(); ctx.translate(n.x,n.y); ctx.scale(1-ease,1-ease); ctx.globalAlpha=1-ease; this.drawPiece(0,0,a.data.p,false,true); ctx.restore(); } });
+    },
+    drawPiece(x,y,p,sel,local=false) { const ctx=this.ctx, r=this.L_RP; if(!local){ctx.fillStyle='rgba(0,0,0,0.5)';ctx.beginPath();ctx.arc(x+4,y+6,r,0,Math.PI*2);ctx.fill();} const g=ctx.createRadialGradient(x-r/3,y-r/3,2,x,y,r); const cols=(p===this.RED)?Assets.colors.pieceP:Assets.colors.pieceC; if(cols && cols.length >= 2) { g.addColorStop(0,cols[0]); g.addColorStop(1,cols[1]); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); } if(sel){ctx.lineWidth=5;ctx.strokeStyle='#ffd700';ctx.stroke();} if(p===this.BLUE_SUPER){ctx.fillStyle='#fff';ctx.font='24px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('★',x,y);} },
+    bindEvents() { const h=e=>{ const touches = e.changedTouches; if(touches && touches.length > 0) { e.preventDefault(); this.click(touches[0].clientX, touches[0].clientY); } else this.click(e.clientX, e.clientY); }; this.canvas.addEventListener('mousedown',h); this.canvas.addEventListener('touchstart',h,{passive:false}); }
+};
+
+const AI = {
+    bestMove(board, level) { const moves=Game.getMoves(board, Game.BLUE); if(moves.length===0)return null; if(level==='easy') return moves[Math.floor(Math.random()*moves.length)]; let depth = level==='master'?5:level==='expert'?4:level==='hard'?3:2; let best=null, max=-Infinity, start=Date.now(); for(let m of moves) { if(Date.now()-start>1500) break; let nb=[...board]; nb[m.to]=nb[m.from]; nb[m.from]=Game.EMPTY; const cap=Game.checkCapture(nb,[Game.RED]); let val=this.minimax(nb, depth-1, -Infinity, Infinity, false) + cap.length*5000; if(val>max){max=val; best=m;} } return best||moves[0]; },
+    eval(board) { let s=0, ai=[1,3], pl=[2]; const aiC=board.filter(p=>ai.includes(p)).length, plC=board.filter(p=>pl.includes(p)).length; if(plC===0)return 100000; if(aiC===0)return -100000; s+=(aiC-plC)*2000; for(let i=0;i<21;i++) if(board[i]!==0 && Game.nodes[i]) { let libs=0; for(let n of Game.nodes[i].adj) if(board[n]===0) libs++; let v=(libs===1?-500:libs*50); if(ai.includes(board[i])) { s+=v; if(board[i]===3) s+=300; } else s-=v; } return s; },
+    minimax(board,d,a,b,max) { if(d===0)return this.eval(board); const moves=Game.getMoves(board,max?1:2); if(moves.length===0) return max?-100000:100000; if(max) { let v=-Infinity; for(let m of moves) { let nb=[...board]; nb[m.to]=nb[m.from]; nb[m.from]=0; let cap=Game.checkCapture(nb,[2]); cap.forEach(i=>nb[i]=0); v=Math.max(v,this.minimax(nb,d-1,a,b,false)); a=Math.max(a,v); if(b<=a)break; } return v; } else { let v=Infinity; for(let m of moves) { let nb=[...board]; nb[m.to]=nb[m.from]; nb[m.from]=0; let cap=Game.checkCapture(nb,[1,3]); cap.forEach(i=>nb[i]=0); v=Math.min(v,this.minimax(nb,d-1,a,b,true)); b=Math.min(b,v); if(b<=a)break; } return v; } }
+};
+
+// === Back Button Handling ===
+window.addEventListener('popstate', () => { const screen = document.getElementById('game-screen'); if (screen.classList.contains('active')) { Game.exitToMenu(); history.pushState({page: 'menu'}, null); } else { const modals = document.querySelectorAll('.modal-overlay.show'); if (modals.length > 0) { UI.closeAll(); history.pushState({page: 'menu'}, null); } } });
+window.onload = () => { Lang.set('zh-CN'); Assets.updateColors(); Game.bindEvents(); Career.load(); history.replaceState({page: 'menu'}, null); };
+</script>
+</body>
+</html>
